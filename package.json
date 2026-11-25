@@ -1,0 +1,103 @@
+{
+  "name": "vscode-deps-sync",
+  "displayName": "Deps Sync (uv / requirements)",
+  "description": "PyCharm-style banner for unsatisfied package requirements: finds missing packages and version drift in uv.lock / pyproject.toml / requirements.txt, offers to fix them.",
+  "version": "0.3.0",
+  "publisher": "Toximiner",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Python",
+    "Other"
+  ],
+  "keywords": [
+    "python",
+    "uv",
+    "dependencies",
+    "requirements"
+  ],
+  "main": "./out/extension.js",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Toximiner/vscode-deps-sync.git"
+  },
+  "activationEvents": [
+    "workspaceContains:pyproject.toml",
+    "workspaceContains:requirements.txt"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "depsSync.checkNow",
+        "title": "Deps Sync: Check now"
+      },
+      {
+        "command": "depsSync.syncProject",
+        "title": "Deps Sync: Sync project (fix problems)"
+      },
+      {
+        "command": "depsSync.showReport",
+        "title": "Deps Sync: Show report"
+      }
+    ],
+    "configuration": {
+      "title": "Deps Sync",
+      "properties": {
+        "depsSync.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable dependency checking."
+        },
+        "depsSync.checkOnFocus": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-check when the window is focused (at most once a minute)."
+        },
+        "depsSync.checkOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-check after saving pyproject.toml / uv.lock / requirements.txt."
+        },
+        "depsSync.banner": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a PyCharm-style notification banner when problems are found."
+        },
+        "depsSync.syncMode": {
+          "type": "string",
+          "enum": ["targeted", "uv-sync"],
+          "default": "targeted",
+          "enumDescriptions": [
+            "Targeted install of problem packages only (uv pip install / python -m pip install).",
+            "Run `uv sync` with the args from depsSync.uvSyncArgs (uv projects only; pip projects fall back to targeted)."
+          ],
+          "description": "How \"Sync project\" runs: a targeted install of problem packages, or a full `uv sync`."
+        },
+        "depsSync.uvSyncArgs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Arguments for `uv sync` (used when depsSync.syncMode = uv-sync). Example: [\"--all-groups\", \"--inexact\"]. Note: without --inexact, uv sync may remove packages that are not in the sync set."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --allow-missing-repository",
+    "smoke": "node out/core/cli.js"
+  },
+  "dependencies": {
+    "smol-toml": "^1.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.1",
+    "typescript": "^5.7.2"
+  }
+}
