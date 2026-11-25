@@ -19,4 +19,10 @@ jobs:
           node-version: 24
       - run: npm ci
       - run: npm run compile
-      - run: npx @vscode/vsce publish --oidc
+      - name: Show toolchain
+        run: |
+          node --version
+          npm --version
+          node -p "'vsce ' + require('@vscode/vsce/package.json').version"
+      - name: Publish (OIDC trusted publishing)
+        run: node node_modules/@vscode/vsce/vsce publish --oidc
