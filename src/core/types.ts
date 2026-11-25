@@ -24,6 +24,8 @@ export interface RequirementResult {
   error?: string;
   /** requirement manually ignored */
   ignored?: boolean;
+  /** PEP 508 environment marker from the declaration */
+  marker?: string;
   /** absolute file path for diagnostics */
   file?: string;
   /** 1-based line in the file, 0 = unknown */
@@ -36,6 +38,8 @@ export interface CheckReport {
   problems: RequirementResult[];
   /** the check itself failed (no uv, no venv, etc.) */
   checkError?: string;
+  /** top-level requirements whose env marker does not apply to this interpreter */
+  notApplicable: RequirementResult[];
   checkedAt: number;
 }
 
