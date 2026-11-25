@@ -2,10 +2,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { parse as parseToml } from 'smol-toml';
 import { ProjectInfo, normName } from './types';
+import { splitMarker } from './markers';
+
+export interface TopRequirement {
+  /** the requirement without the env marker */
+  requirement: string;
+  /** PEP 508 environment marker, if declared */
+  marker: string | null;
+  line: number;
+  file: string;
+}
 
 export interface Declared {
   /** top-level requirements (from [project].dependencies / requirements.txt) */
-  top: { requirement: string; line: number; file: string }[];
+  top: TopRequirement[];
   /** full lock map: normalized name → { version, line, file } (uv only) */
   lock: Map<string, { version: string; line: number; file: string }>;
 }
@@ -55,8 +65,8 @@ function declaredUv(p: ProjectInfo): Declared {
 }
 
 /** Top-level requirements from [project].dependencies (with pyproject.toml line numbers) */
-function topLevelFromPyproject(file: string): { requirement: string; line: number; file: string }[] {
-  const out: { requirement: string; line: number; file: string }[] = [];
+function topLevelFromPyproject(file: string): TopRequirement[] {
+  const out: TopRequirement[] = [];
   if (!fs.existsSync(file)) return out;
   const raw = fs.readFileSync(file, 'utf8');
   let deps: string[] = [];
@@ -67,17 +77,17 @@ function topLevelFromPyproject(file: string): { requirement: string; line: numbe
   }
   const lines = raw.split(/\r?\n/);
   for (const req of deps) {
-    const clean = req.split(';')[0].trim();
-    const nm = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/.exec(clean)?.[1] ?? '';
+    const { spec, marker } = splitMarker(req);
+    const nm = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/.exec(spec)?.[1] ?? '';
     const idx = nm ? lines.findIndex(l => l.includes(`"${nm}`)) : -1;
-    out.push({ requirement: clean, line: idx >= 0 ? idx + 1 : 0, file });
+    out.push({ requirement: spec, marker, line: idx >= 0 ? idx + 1 : 0, file });
   }
   return out;
 }
 
-/** requirements.txt: each requirement line, without comments/options/env markers */
+/** requirements.txt: each requirement line, without comments/options; env markers preserved */
 function declaredRequirements(file: string): Declared {
-  const top: { requirement: string; line: number; file: string }[] = [];
+  const top: TopRequirement[] = [];
   if (fs.existsSync(file)) {
     const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
     lines.forEach((raw, i) => {
@@ -86,9 +96,9 @@ function declaredRequirements(file: string): Declared {
       const hash = l.indexOf(' #');
       if (hash >= 0) l = l.slice(0, hash).trim();
       if (l.startsWith('-')) return; // -r, -e, -i, --hash, etc.
-      l = l.split(';')[0].trim();
-      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*(\[[^\]]*\])?(\s*(===|==|!=|>=|<=|~=|>|<)\s*[A-Za-z0-9][A-Za-z0-9.*+!-]*)?\s*$/.test(l)) return;
-      top.push({ requirement: l, line: i + 1, file });
+      const { spec, marker } = splitMarker(l);
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*(\[[^\]]*\])?(\s*(===|==|!=|>=|<=|~=|>|<)\s*[A-Za-z0-9][A-Za-z0-9.*+!-]*)?\s*$/.test(spec)) return;
+      top.push({ requirement: spec, marker, line: i + 1, file });
     });
   }
   return { top, lock: new Map() };

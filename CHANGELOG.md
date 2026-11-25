@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- PEP 508 environment markers: requirements whose marker is false for the project interpreter (e.g. `pywin32; sys_platform == "win32"` on Linux) are skipped and listed as "not applicable" in the report. Facts (python_version, sys_platform, …) are read from the project venv's python.
+- Multi-root workspaces: every folder with a Python project is checked; problems, diagnostics and the report are aggregated.
+- "Sync project" now defaults to `uv sync` (`depsSync.syncMode = "uv-sync"`), with `depsSync.uvSyncArgs` defaulting to `["--all-groups", "--inexact"]` — sync all groups, add/update only, never remove.
+- The smoke CLI accepts multiple project roots.
+
 ## 0.3.0
 
 - All UI strings and setting descriptions switched to English (marketplace standard); the Russian README is kept as `README.ru.md` (shown to Russian users on the marketplace).

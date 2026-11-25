@@ -3,6 +3,7 @@ import { detect } from './detect';
 import { getDeclared } from './declared';
 import { getInstalled } from './installed';
 import { satisfies } from './pep440';
+import { evaluateMarker, getInterpreterFacts } from './markers';
 
 export function extractName(req: string): string | null {
   const m = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(?:[<>=!~;]|$)/.exec(req);
@@ -23,7 +24,7 @@ export function extractSpec(req: string): string {
  */
 export async function checkProject(root: string, ignored: string[] = []): Promise<CheckReport> {
   const project = detect(root);
-  const base: CheckReport = { project, results: [], problems: [], checkedAt: Date.now() };
+  const base: CheckReport = { project, results: [], problems: [], notApplicable: [], checkedAt: Date.now() };
   if (project.kind === 'none') return base;
 
   const declared = getDeclared(project);
@@ -34,6 +35,9 @@ export async function checkProject(root: string, ignored: string[] = []): Promis
     return { ...base, checkError: `Cannot list installed packages: ${String(e)}` };
   }
 
+  const hasMarkers = declared.top.some(t => t.marker);
+  const facts = hasMarkers ? await getInterpreterFacts(project.python) : null;
+
   const results: RequirementResult[] = [];
   const isIgnored = (name: string) => ignored.includes(normName(name));
 
@@ -43,6 +47,15 @@ export async function checkProject(root: string, ignored: string[] = []): Promis
       results.push({
         requirement: t.requirement, name: null, status: 'parse-error',
         line: t.line, file: t.file, error: 'unparseable requirement',
+      });
+      continue;
+    }
+    // PEP 508: the marker is false for this interpreter → the requirement
+    // does not apply to this environment and is not a problem
+    if (t.marker && !evaluateMarker(t.marker, facts)) {
+      base.notApplicable.push({
+        requirement: t.requirement, name: nm, status: 'ok',
+        line: t.line, file: t.file, marker: t.marker,
       });
       continue;
     }
@@ -67,7 +80,7 @@ export async function checkProject(root: string, ignored: string[] = []): Promis
     const problems = results.filter(
       r => !r.ignored && (r.status === 'mismatch' || r.status === 'missing' || r.status === 'parse-error'),
     );
-    return { project, results, problems, checkedAt: Date.now() };
+    return { project, results, problems, notApplicable: base.notApplicable, checkedAt: Date.now() };
   }
 
   const seenTop = new Set<string>();
@@ -96,7 +109,7 @@ export async function checkProject(root: string, ignored: string[] = []): Promis
   const problems = results.filter(
     r => !r.ignored && (r.status === 'mismatch' || r.status === 'missing' || r.status === 'parse-error'),
   );
-  return { project, results, problems, checkedAt: Date.now() };
+  return { project, results, problems, notApplicable: base.notApplicable, checkedAt: Date.now() };
 }
 
 /** Requirements to fix: mismatch → pin to the locked version; missing → the spec (or latest). */

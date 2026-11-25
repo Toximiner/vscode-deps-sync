@@ -1,8 +1,8 @@
 {
   "name": "vscode-deps-sync",
   "displayName": "Deps Sync (uv / requirements)",
-  "description": "PyCharm-style banner for unsatisfied package requirements: finds missing packages and version drift in uv.lock / pyproject.toml / requirements.txt, offers to fix them.",
-  "version": "0.3.0",
+  "description": "PyCharm-style banner for unsatisfied package requirements: finds missing packages and version drift in uv.lock / pyproject.toml / requirements.txt (PEP 508 markers, multi-root), offers to fix them.",
+  "version": "0.4.0",
   "publisher": "Toximiner",
   "license": "MIT",
   "engines": {
@@ -72,20 +72,23 @@
             "targeted",
             "uv-sync"
           ],
-          "default": "targeted",
+          "default": "uv-sync",
           "enumDescriptions": [
             "Targeted install of problem packages only (uv pip install / python -m pip install).",
-            "Run `uv sync` with the args from depsSync.uvSyncArgs (uv projects only; pip projects fall back to targeted)."
+            "Run `uv sync` with the args from depsSync.uvSyncArgs (uv projects only; pip projects fall back to targeted). Default."
           ],
-          "description": "How \"Sync project\" runs: a targeted install of problem packages, or a full `uv sync`."
+          "description": "How \"Sync project\" runs: a full `uv sync` (default, uv projects) or a targeted install of problem packages."
         },
         "depsSync.uvSyncArgs": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "default": [],
-          "description": "Arguments for `uv sync` (used when depsSync.syncMode = uv-sync). Example: [\"--all-groups\", \"--inexact\"]. Note: without --inexact, uv sync may remove packages that are not in the sync set."
+          "default": [
+            "--all-groups",
+            "--inexact"
+          ],
+          "description": "Arguments for `uv sync` (used when depsSync.syncMode = uv-sync). Default is [\"--all-groups\", \"--inexact\"]: sync all dependency groups, add/update only, never remove. Adjust for your project (e.g. --inexact is what keeps extra packages installed)."
         }
       }
     }

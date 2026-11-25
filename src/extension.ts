@@ -10,7 +10,8 @@ const IGNORE_KEY = 'depsSync.ignore';
 let statusItem: vscode.StatusBarItem;
 let diagnostics: vscode.DiagnosticCollection;
 let output: vscode.OutputChannel;
-let latest: CheckReport | null = null;
+/** one report per workspace folder (multi-root) */
+let latest: CheckReport[] = [];
 let lastCheckAt = 0;
 let checking = false;
 let lastBannerSig = '';
@@ -70,27 +71,31 @@ function cfg(): {
 async function runCheck(manual: boolean): Promise<void> {
   const c = cfg();
   if (!c.enabled || checking) return;
-  const folder = vscode.workspace.workspaceFolders?.[0];
-  if (!folder) return;
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  if (folders.length === 0) return;
 
   checking = true;
   statusItem.text = '$(sync~spin) deps…';
   try {
     const ignored = (await ctx.workspaceState.get<string[]>(IGNORE_KEY)) ?? [];
-    const report = await checkProject(folder.uri.fsPath, ignored);
-    latest = report;
+    const reports = (await Promise.all(folders.map(f => checkProject(f.uri.fsPath, ignored))))
+      .filter(r => r.project.kind !== 'none');
+    latest = reports;
     lastCheckAt = Date.now();
-    render(report);
+    render(reports);
 
-    const sig = JSON.stringify(report.problems.map(p => `${p.name}:${p.status}`));
-    if (report.problems.length > 0 && c.banner && !manual && sig !== lastBannerSig) {
+    const withProblems = reports.find(r => r.problems.length > 0);
+    const sig = JSON.stringify(reports.flatMap(r => r.problems.map(p => `${r.project.root}::${p.name}:${p.status}`)));
+    if (withProblems && c.banner && !manual && sig !== lastBannerSig) {
       lastBannerSig = sig;
-      const first = report.problems[0];
+      const first = withProblems.problems[0];
+      const count = withProblems.problems.length;
       const msg =
-        report.problems.length === 1
+        count === 1
           ? describe(first)
-          : `${describe(first)}  (+ ${report.problems.length - 1} more)`;
-      const pick = await vscode.window.showInformationMessage(`Deps Sync: ${msg}`, 'Sync project', 'Ignore…', 'Show report');
+          : `${describe(first)}  (+ ${count - 1} more)`;
+      const prefix = reports.length > 1 ? ` [${path.basename(withProblems.project.root)}]` : '';
+      const pick = await vscode.window.showInformationMessage(`Deps Sync${prefix}: ${msg}`, 'Sync project', 'Ignore…', 'Show report');
       if (pick === 'Sync project') await syncProject();
       else if (pick === 'Ignore…') await ignoreFlow();
       else if (pick === 'Show report') showReport();
@@ -103,20 +108,21 @@ async function runCheck(manual: boolean): Promise<void> {
   }
 }
 
-function render(report: CheckReport): void {
+function render(reports: CheckReport[]): void {
   diagnostics.clear();
-  if (report.checkError) {
-    statusItem.text = '$(warning) deps: error';
-    statusItem.tooltip = report.checkError;
-    return;
-  }
-  const problems = report.problems;
-  if (problems.length === 0) {
-    statusItem.text = '$(check) deps';
-    statusItem.tooltip = `Deps Sync: ok (${report.results.length} checked, ${new Date(report.checkedAt).toLocaleTimeString()})`;
-  } else {
+  const errors = reports.filter(r => r.checkError);
+  const problems = reports.flatMap(r => r.problems);
+  if (problems.length > 0) {
     statusItem.text = `$(warning) deps: ${problems.length}`;
     statusItem.tooltip = `Deps Sync: ${problems.length} problem(s). Click for report.`;
+  } else if (errors.length > 0) {
+    statusItem.text = '$(warning) deps: error';
+    statusItem.tooltip = errors.map(r => r.checkError).join('\n');
+    return;
+  } else {
+    const total = reports.reduce((n, r) => n + r.results.length, 0);
+    statusItem.text = '$(check) deps';
+    statusItem.tooltip = `Deps Sync: ok (${total} checked, ${new Date(Date.now()).toLocaleTimeString()})`;
   }
 
   const byFile = new Map<string, vscode.Diagnostic[]>();
@@ -150,33 +156,39 @@ function describe(p: RequirementResult): string {
 
 function showReport(): void {
   output.clear();
-  if (!latest) {
+  if (latest.length === 0) {
     output.appendLine('No data yet — run "Deps Sync: Check now".');
     output.show(true);
     return;
   }
-  const r = latest;
-  output.appendLine(`Project: ${r.project.root} (${r.project.kind})`);
-  output.appendLine(`Checked: ${new Date(r.checkedAt).toLocaleString()}`);
-  if (r.checkError) output.appendLine(`ERROR: ${r.checkError}`);
-  output.appendLine(`\nPROBLEMS (${r.problems.length}):`);
-  for (const p of r.problems) {
-    const loc = p.file && p.line ? `  [${path.relative(r.project.root, p.file)}:${p.line}]` : '';
-    output.appendLine(`  • ${describe(p)}${loc}`);
+  for (const r of latest) {
+    output.appendLine(`\nProject: ${r.project.root} (${r.project.kind})`);
+    output.appendLine(`Checked: ${new Date(r.checkedAt).toLocaleString()}`);
+    if (r.checkError) output.appendLine(`ERROR: ${r.checkError}`);
+    output.appendLine(`PROBLEMS (${r.problems.length}):`);
+    for (const p of r.problems) {
+      const loc = p.file && p.line ? `  [${path.relative(r.project.root, p.file)}:${p.line}]` : '';
+      output.appendLine(`  • ${describe(p)}${loc}`);
+    }
+    if (r.notApplicable.length > 0) {
+      output.appendLine(`\nNot applicable for this environment (env marker false):`);
+      for (const n of r.notApplicable) output.appendLine(`  • ${n.requirement}  [${n.marker}]`);
+    }
+    const extras = r.results.filter(x => x.status === 'extra');
+    if (extras.length) {
+      output.appendLine(`\nInstalled, but not in lock (informational):`);
+      for (const e of extras) output.appendLine(`  • ${e.name} ${e.installed}`);
+    }
+    output.appendLine(`\nOK: ${r.results.filter(x => x.status === 'ok').length} requirement(s) satisfied`);
   }
-  const extras = r.results.filter(x => x.status === 'extra');
-  if (extras.length) {
-    output.appendLine(`\nInstalled, but not in lock (informational):`);
-    for (const e of extras) output.appendLine(`  • ${e.name} ${e.installed}`);
-  }
-  output.appendLine(`\nOK: ${r.results.filter(x => x.status === 'ok').length} requirement(s) satisfied`);
   output.show(true);
 }
 
 /** Banner "Ignore…": adds the package name to the workspace-level ignore list. */
 async function ignoreFlow(): Promise<void> {
-  if (!latest) return;
-  const items = latest.problems
+  const report = latest.find(r => r.problems.length > 0);
+  if (!report) return;
+  const items = report.problems
     .filter(p => p.name)
     .map(p => ({ label: p.name!, description: p.requirement ?? p.status }));
   if (items.length === 0) return;
@@ -200,13 +212,14 @@ async function ignoreFlow(): Promise<void> {
  *   uv: `uv pip install …`; pip: `<venv>/python -m pip install …`.
  */
 async function syncProject(): Promise<void> {
-  if (!latest) await runCheck(true);
-  if (!latest) return;
-  if (latest.problems.length === 0) {
+  if (latest.length === 0) await runCheck(true);
+  const report = latest.find(r => r.problems.length > 0) ?? latest[0];
+  if (!report) return;
+  if (report.problems.length === 0) {
     vscode.window.showInformationMessage('Deps Sync: all requirements are satisfied.');
     return;
   }
-  const p = latest.project;
+  const p = report.project;
   const c = cfg();
 
   if (c.syncMode === 'uv-sync' && p.kind === 'uv') {
@@ -220,7 +233,7 @@ async function syncProject(): Promise<void> {
     vscode.window.showInformationMessage('Deps Sync: uv sync is not available for pip projects — falling back to a targeted install.');
   }
 
-  const reqs = syncRequirements(latest);
+  const reqs = syncRequirements(report);
   if (reqs.length === 0) {
     vscode.window.showInformationMessage('Deps Sync: nothing to install (see the report).');
     return;
