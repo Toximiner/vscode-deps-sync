@@ -68,7 +68,10 @@
         },
         "depsSync.syncMode": {
           "type": "string",
-          "enum": ["targeted", "uv-sync"],
+          "enum": [
+            "targeted",
+            "uv-sync"
+          ],
           "default": "targeted",
           "enumDescriptions": [
             "Targeted install of problem packages only (uv pip install / python -m pip install).",
@@ -78,7 +81,9 @@
         },
         "depsSync.uvSyncArgs": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Arguments for `uv sync` (used when depsSync.syncMode = uv-sync). Example: [\"--all-groups\", \"--inexact\"]. Note: without --inexact, uv sync may remove packages that are not in the sync set."
         }
@@ -97,7 +102,7 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/vscode": "^1.85.0",
-    "@vscode/vsce": "^3.2.1",
+    "@vscode/vsce": "^4.1.1",
     "typescript": "^5.7.2"
   }
 }

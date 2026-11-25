@@ -1,0 +1,7 @@
+.vscode/**
+.github/**
+src/**
+*.vsix
+.gitignore
+tsconfig.json
+**/tsconfig.tsbuildinfo
